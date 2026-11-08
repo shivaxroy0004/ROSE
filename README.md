@@ -26,3 +26,10 @@ No source images, external assets, or visible borders are used. The geometry act
 
 ```bash
 python rose.py
+```
+
+## Web Version (Netlify)
+
+`rose.py` is a desktop app: it opens a `tkinter` window, so it can't run on a headless build server. The same animation has been ported to a static web page in `public/index.html`, which uses an HTML canvas and needs no dependencies. `netlify.toml` publishes the `public` folder and skips the Python build step.
+
+To view it locally, open `public/index.html` in a browser.
