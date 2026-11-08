@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A Rose Written in Every Language</title>
+<meta name="description" content="An animated rose made entirely of the words “I love you” in dozens of languages.">
+<style>
+  html, body { margin: 0; height: 100%; background: #060208; }
+  body { display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  canvas { display: block; width: min(100vw, 100vh, 800px); height: min(100vw, 100vh, 800px); }
+</style>
+</head>
+<body>
+<canvas id="rose" aria-label="A rose drawn from the words I love you in many languages" role="img"></canvas>
+<script>
+(() => {
+  const W = 800, H = 800;
+  const DURATION = 10, TICK = 16, ANIM = 38, LIFT = 32, GAP = 3;
+  const BG = "#060208";
+  const SEED = 17;
+  const PT = 4 / 3; // Tk font sizes are points; convert to CSS px
+
+  const PHRASES = [
+    "I LOVE YOU", "I love you", "Te amo", "Ti amo", "Je t'aime",
+    "Ich liebe dich", "Eu te amo", "Seni seviyorum", "Я тебя люблю",
+    "사랑해", "愛してる", "我爱你", "मैं तुमसे प्यार करती हूँ",
+    "मैं तुमसे प्यार करता हूँ", "Σ' αγαπώ", "Ik hou van jou",
+    "Jag älskar dig", "Kocham cię", "ฉันรักคุณ", "Anh yêu em",
+    "Aku cinta kamu", "Mahal kita", "אני אוהבת אותך", "أحبك",
+    "నేను నిన్ను ప్రేమిస్తున్నాను", "நான் உன்னை காதலிக்கிறேன்",
+    "আমি তোমাকে ভালোবাসি", "Volim te", "Te iubesc", "Ljubim te",
+    "Nakupenda", "Я тебе кохаю", "Miluji tě", "Szeretlek",
+    "Rakastan sinua", "Jeg elsker dig"
+  ];
+  const ACCENTS = [
+    "LOVE", "TE AMO", "AMOUR", "TI AMO", "I LOVE YOU", "AMOR",
+    "愛してる", "사랑해", "我爱你", "LOVE YOU", "JE T'AIME",
+    "SZERETLEK", "NAKUPENDA"
+  ];
+  const SHORT_PHRASES = [
+    "Te amo", "Ti amo", "AMOR", "LOVE", "愛してる", "사랑해", "我爱你",
+    "Amour", "I love you", "Mahal kita", "Te iubesc", "Volim te",
+    "Szeretlek", "Miluji tě", "Nakupenda"
+  ];
+  const HEAD_WORDS = PHRASES.concat([
+    "LOVE", "LOVE", "LOVE YOU", "AMOR", "AMOR", "AMOUR", "AMOUR",
+    "AMORE", "LIEBE", "TE AMO", "TE AMO", "TI AMO", "TI AMO",
+    "TE QUIERO", "TE QUIERO", "JE T'AIME", "I LOVE YOU", "I LOVE YOU",
+    "愛", "愛してる", "愛してる", "사랑", "사랑해", "사랑해", "我爱你",
+    "Mahal kita", "รักคุณ", "ANH YÊU EM", "तुमसे प्यार है",
+    "నిన్ను ప్రేమిస్తున్నా", "உன்னை காதலிக்கிறேன்", "ভালোবাসি",
+    "أحبك", "LOVE", "AMOR", "AMOUR", "Nakupenda", "Szeretlek"
+  ]);
+  const HEAD_SIZES = [7, 8, 9, 10, 11, 12, 13, 14];
+  const HEAD_WEIGHTS = [2, 4, 5, 5, 4, 2, 1, 0.5];
+
+  // Seeded PRNG (mulberry32) so the layout is the same on every visit
+  let seed = SEED >>> 0;
+  const random = () => {
+    seed = (seed + 0x6D2B79F5) >>> 0;
+    let t = seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const uniform = (a, b) => a + (b - a) * random();
+  const choice = (arr) => arr[Math.floor(random() * arr.length)];
+  const shuffle = (arr) => {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  };
+  const weightedChoice = (items, weights) => {
+    const total = weights.reduce((a, b) => a + b, 0);
+    let x = random() * total;
+    for (let i = 0; i < items.length; i++) {
+      x -= weights[i];
+      if (x < 0) return items[i];
+    }
+    return items[items.length - 1];
+  };
+
+  const ellipsePoly = (cx, cy, rx, ry, points = 160) => {
+    const out = [];
+    for (let i = 0; i < points; i++) {
+      const a = 2 * Math.PI * i / points;
+      out.push([cx + rx * Math.cos(a), cy + ry * Math.sin(a)]);
+    }
+    return out;
+  };
+
+  const HEAD_SHAPES = [
+    ellipsePoly(400, 180, 145, 90),
+    ellipsePoly(330, 180, 120, 83),
+    ellipsePoly(470, 180, 120, 83),
+    ellipsePoly(275, 260, 98, 112),
+    ellipsePoly(525, 260, 98, 112),
+    ellipsePoly(338, 325, 118, 126),
+    ellipsePoly(462, 325, 118, 126),
+    [[230, 330], [290, 365], [348, 414], [400, 532],
+     [452, 414], [510, 365], [570, 330], [522, 452],
+     [400, 542], [278, 452]],
+  ];
+  const STEM = [[378, 493], [422, 493], [427, 752], [408, 772], [390, 760], [374, 600]];
+  const LEFT_LEAF = [[395, 594], [359, 554], [304, 535], [244, 541],
+                     [215, 562], [253, 609], [321, 631], [374, 617]];
+  const RIGHT_LEAF = [[406, 619], [442, 581], [491, 561], [553, 578],
+                      [578, 600], [535, 640], [476, 660], [425, 649]];
+
+  // Canvas setup (crisp on high-DPI screens)
+  const canvas = document.getElementById("rose");
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // Layer holding words that have finished animating
+  const layer = document.createElement("canvas");
+  layer.width = W * dpr;
+  layer.height = H * dpr;
+  const lctx = layer.getContext("2d");
+  lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  lctx.fillStyle = BG;
+  lctx.fillRect(0, 0, W, H);
+
+  for (const c of [ctx, lctx]) { c.textAlign = "center"; c.textBaseline = "middle"; }
+
+  // Font selection per script, mirroring the desktop version's fallbacks
+  const hasAny = (text, lo, hi) => [...text].some(ch => { const c = ch.codePointAt(0); return c >= lo && c <= hi; });
+  const family = (text) => {
+    if (hasAny(text, 0xAC00, 0xD7AF)) return '"Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans CJK KR", "Noto Sans KR", sans-serif';
+    if (hasAny(text, 0x3040, 0x30FF)) return '"Yu Gothic UI", "Hiragino Sans", Meiryo, "Noto Sans CJK JP", "Noto Sans JP", sans-serif';
+    if (hasAny(text, 0x4E00, 0x9FFF)) return '"Microsoft YaHei", "PingFang SC", SimHei, "Noto Sans CJK SC", "Noto Sans SC", sans-serif';
+    if (hasAny(text, 0x0900, 0x097F)) return '"Nirmala UI", Mangal, "Kohinoor Devanagari", "Noto Sans Devanagari", sans-serif';
+    if (hasAny(text, 0x0980, 0x09FF)) return '"Nirmala UI", Vrinda, "Kohinoor Bangla", "Noto Sans Bengali", sans-serif';
+    if (hasAny(text, 0x0C00, 0x0C7F)) return 'Gautami, "Nirmala UI", "Kohinoor Telugu", "Noto Sans Telugu", sans-serif';
+    if (hasAny(text, 0x0B80, 0x0BFF)) return 'Latha, "Tamil Sangam MN", "Noto Sans Tamil", sans-serif';
+    if (hasAny(text, 0x0E00, 0x0E7F)) return '"Leelawadee UI", Thonburi, "Noto Sans Thai", sans-serif';
+    if (hasAny(text, 0x0600, 0x06FF)) return '"Segoe UI", Arial, "Noto Sans Arabic", sans-serif';
+    if (hasAny(text, 0x0590, 0x05FF)) return 'Arial, "Noto Sans Hebrew", sans-serif';
+    if (hasAny(text, 0x0370, 0x03FF) || hasAny(text, 0x0400, 0x04FF)) return 'Georgia, Arial, serif';
+    return 'Georgia, "Times New Roman", Arial, serif';
+  };
+  const fontCache = new Map();
+  const fontFor = (text, size) => {
+    const key = family(text) + "|" + size;
+    if (!fontCache.has(key)) fontCache.set(key, `bold ${(size * PT).toFixed(2)}px ${family(text)}`);
+    return fontCache.get(key);
+  };
+  const widthCache = new Map();
+  const measure = (text, size) => {
+    const font = fontFor(text, size);
+    const key = font + "|" + text;
+    if (!widthCache.has(key)) { ctx.font = font; widthCache.set(key, ctx.measureText(text).width); }
+    return widthCache.get(key);
+  };
+  const linespace = (size) => Math.ceil(size * PT * 1.25);
+
+  // Colour helpers
+  const rgb = (hex) => { hex = hex.replace("#", ""); return [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16) / 255); };
+  const clamp = (v) => Math.max(0, Math.min(1, v));
+  const mix = (a, b, k) => a.map((x, i) => x + (b[i] - x) * k);
+  const css = (c) => `rgb(${c.map(v => Math.round(clamp(v) * 255)).join(",")})`;
+  const BGC = rgb(BG);
+  const GLOW = [1.0, 0.83, 0.88];
+
+  // Polygon scanline helpers
+  const polygonSpans = (poly, y) => {
+    const xs = [];
+    for (let i = 0; i < poly.length; i++) {
+      const [x1, y1] = poly[i], [x2, y2] = poly[(i + 1) % poly.length];
+      if (((y1 <= y && y < y2) || (y2 <= y && y < y1)) && y2 !== y1) xs.push(x1 + (y - y1) * (x2 - x1) / (y2 - y1));
+    }
+    xs.sort((a, b) => a - b);
+    const out = [];
+    for (let i = 0; i + 1 < xs.length; i += 2) out.push([xs[i], xs[i + 1]]);
+    return out;
+  };
+  const mergeSpans = (spans) => {
+    if (!spans.length) return [];
+    spans = spans.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const merged = [spans[0].slice()];
+    for (const [lo, hi] of spans.slice(1)) {
+      const last = merged[merged.length - 1];
+      if (lo <= last[1] + 1) last[1] = Math.max(last[1], hi); else merged.push([lo, hi]);
+    }
+    return merged;
+  };
+  const shapeSpans = (polys, y) => mergeSpans(polys.flatMap(p => polygonSpans(p, y)));
+  const intersectSpans = (a, b, minimum) => {
+    const out = [];
+    for (const s of a) for (const t of b) {
+      const lo = Math.max(s[0], t[0]), hi = Math.min(s[1], t[1]);
+      if (hi - lo >= minimum) out.push([lo, hi]);
+    }
+    return mergeSpans(out);
+  };
+
+  const roseColor = (x, y, size, edge) => {
+    const dx = (x - 400) / 210, dy = (y - 300) / 220;
+    const rad = Math.sqrt(dx * dx + dy * dy);
+    let palette;
+    if (rad > 0.82) palette = ["#8f0b2b", "#ae1238", "#c41d48", "#d52b53"];
+    else if (rad > 0.48) palette = ["#b9143d", "#d21e49", "#e33b60", "#f04e73"];
+    else palette = ["#c51b49", "#e83c68", "#f16b8b", "#ff91a9"];
+    if (edge) palette = palette.concat(["#f5a0b3", "#ef6488"]);
+    if (size >= 14) palette = palette.concat(["#ff9ab1", "#ffd0dc"]);
+    return rgb(choice(palette));
+  };
+  const greenColor = (x, y, size) => {
+    let palette = ["#3e8034", "#559c3c", "#72b84b", "#91cf62", "#b1e184"];
+    if (size >= 9) palette = palette.concat(["#a7d486", "#c0e19a"]);
+    return rgb(choice(palette));
+  };
+  const colorFor = (x, y, size, kind, edge) => kind === "head" ? roseColor(x, y, size, edge) : greenColor(x, y, size);
+
+  const cycles = new Map();
+  const phraseFromPool = (poolName, size) => {
+    const pool = size >= 14 ? ACCENTS : (poolName !== "head" ? SHORT_PHRASES : HEAD_WORDS);
+    const key = poolName + "|" + (size >= 14 ? "accent" : "normal");
+    let state = cycles.get(key);
+    if (!state || !state.items.length) { state = { items: shuffle(pool.slice()), index: 0 }; cycles.set(key, state); }
+    const phrase = state.items[state.index++];
+    if (state.index >= state.items.length) state.items = [];
+    return phrase;
+  };
+  const sizeFor = (poolName) => poolName === "head"
+    ? weightedChoice(HEAD_SIZES, HEAD_WEIGHTS)
+    : choice(poolName === "stem" ? [6, 7, 8] : [7, 8, 9, 10]);
+
+  const buildRegion = (polys, yStart, yEnd, rowH, kind) => {
+    const placed = [];
+    const half = rowH / 2;
+    const gap = kind === "head" ? GAP : 1;
+    for (let y = yStart + half; y < yEnd - half; y += rowH) {
+      const row = intersectSpans(shapeSpans(polys, y - half + 1), shapeSpans(polys, y + half - 1), kind === "head" ? 19 : 16);
+      for (let [lo, hi] of row) {
+        const margin = kind === "head" ? 3 : 1;
+        lo += margin; hi -= margin;
+        const available = hi - lo;
+        if (available < 18) continue;
+        const line = [];
+        let cur = lo + uniform(0, Math.min(3, Math.max(1, available * 0.02)));
+        while (cur < hi - 15) {
+          const remaining = hi - cur;
+          const candidates = [];
+          const target = Math.min(74, Math.max(19, remaining * 0.22));
+          const tries = kind === "head" ? 45 : 55;
+          for (let t = 0; t < tries; t++) {
+            const size = sizeFor(kind);
+            const text = phraseFromPool(kind, size);
+            const width = measure(text, size);
+            if (width <= remaining && width >= Math.min(18, remaining * 0.2)) {
+              candidates.push([Math.abs(width - target) + uniform(0, 13), text, size, width]);
+            }
+          }
+          if (!candidates.length) break;
+          candidates.sort((a, b) => a[0] - b[0]);
+          const [, text, size, width] = choice(candidates.slice(0, Math.min(4, candidates.length)));
+          line.push({ x: cur + width / 2, y, text, size, width, kind });
+          cur += width + gap;
+        }
+        if (!line.length) continue;
+        const used = line.reduce((s, it) => s + it.width, 0) + Math.max(0, line.length - 1) * gap;
+        const slack = Math.max(0, available - used);
+        const extra = line.length > 1 ? slack / (line.length - 1) : 0;
+        line.forEach((it, i) => {
+          it.x += extra * i;
+          it.edge = i === 0 || i === line.length - 1;
+          it.color = colorFor(it.x, it.y, it.size, kind, it.edge);
+          it.font = fontFor(it.text, it.size);
+          placed.push(it);
+        });
+      }
+    }
+    return placed;
+  };
+
+  const start = () => {
+    const headRowH = Math.max(...[9, 10, 11].map(linespace)) + 1;
+    const leafRowH = Math.max(...[7, 8, 9].map(linespace)) + 1;
+    const stemRowH = Math.max(...[6, 7, 8].map(linespace)) + 1;
+
+    const placed = [
+      ...buildRegion(HEAD_SHAPES, 88, 540, headRowH, "head"),
+      ...buildRegion([LEFT_LEAF], 543, 618, leafRowH, "leaf"),
+      ...buildRegion([RIGHT_LEAF], 575, 651, leafRowH, "leaf"),
+      ...buildRegion([STEM], 492, 773, stemRowH, "stem"),
+    ];
+
+    const angle = (p) => { const a = Math.atan2(p.y - 300, p.x - 400); return a < 0 ? a + 2 * Math.PI : a; };
+    const outer = placed.filter(p => p.edge).sort((a, b) => angle(a) - angle(b));
+    const inner = placed.filter(p => !p.edge).map(p => [random(), p]).sort((a, b) => a[0] - b[0]).map(e => e[1]);
+    const ORDER = outer.concat(inner);
+
+    const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const drawFinal = (p) => {
+      lctx.font = p.font;
+      lctx.fillStyle = css(p.color.map(c => c * 0.23));
+      lctx.fillText(p.text, p.x + 1, p.y + 2);
+      lctx.fillStyle = css(p.color.map(c => c * 0.30));
+      lctx.fillText(p.text, p.x, p.y);
+      lctx.fillStyle = css(p.color);
+      lctx.fillText(p.text, p.x, p.y);
+    };
+
+    const drawAnimating = (p) => {
+      const u = clamp(p.frame / ANIM);
+      const eased = 1 - Math.pow(1 - u, 3);
+      const px = p.x + p.dx * (1 - eased);
+      const py = p.y - LIFT * (1 - eased);
+      ctx.font = p.font;
+      ctx.fillStyle = css(mix(BGC, p.color.map(c => c * 0.23), eased));
+      ctx.fillText(p.text, px + 1, py + 2);
+      ctx.fillStyle = css(mix(BGC, p.color.map(c => c * 0.30), eased * eased));
+      ctx.fillText(p.text, px, py);
+      const flash = 0.55 * Math.sin(Math.PI * clamp((u - 0.58) / 0.42));
+      ctx.fillStyle = css(mix(mix(BGC, p.color, Math.pow(eased, 1.35)), GLOW, flash));
+      ctx.fillText(p.text, px, py);
+    };
+
+    const done = [];
+    let shimmering = [];
+    let active = [];
+    let next = 0;
+    let acc = 0;
+    const rate = ORDER.length / Math.max(1, DURATION * 1000 / TICK);
+
+    if (reduceMotion) {
+      ORDER.forEach(p => { drawFinal(p); done.push(p); });
+      next = ORDER.length;
+    }
+
+    let last = performance.now() + 200;
+    let lastShimmer = 0;
+
+    const tick = () => {
+      // Spawn words in sequence
+      if (next < ORDER.length) {
+        acc += rate;
+        while (acc >= 1 && next < ORDER.length) {
+          acc -= 1;
+          const p = ORDER[next++];
+          p.frame = 0;
+          p.dx = uniform(-6, 6);
+          active.push(p);
+        }
+      }
+      active = active.filter(p => {
+        p.frame += 1;
+        if (p.frame >= ANIM) { drawFinal(p); done.push(p); return false; }
+        return true;
+      });
+    };
+
+    const frame = (now) => {
+      // Advance the simulation in fixed 16ms ticks to match the original pacing
+      if (now >= last) {
+        let steps = 0;
+        while (now - last >= TICK && steps < 10) { tick(); last += TICK; steps++; }
+        if (steps === 10) last = now;
+      }
+
+      // Ambient shimmer once the rose is complete
+      const complete = next >= ORDER.length && !active.length;
+      if (complete && done.length && now - lastShimmer >= 145) {
+        lastShimmer = now;
+        shimmering.push({ p: choice(done), until: now + 210 });
+      }
+      shimmering = shimmering.filter(s => s.until > now);
+
+      ctx.drawImage(layer, 0, 0, W, H);
+      for (const p of active) drawAnimating(p);
+      for (const { p } of shimmering) {
+        ctx.font = p.font;
+        ctx.fillStyle = css(mix(p.color, [1.0, 0.82, 0.88], 0.55));
+        ctx.fillText(p.text, p.x, p.y);
+      }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  };
+
+  // Wait for fonts so text measurement matches what is drawn
+  (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(start);
+})();
+</script>
+</body>
+</html>

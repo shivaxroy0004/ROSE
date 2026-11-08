@@ -1,0 +1,6 @@
+# The rose is served as a static web page from /public.
+# rose.py is a desktop (tkinter) app and cannot run on headless build servers,
+# so no Python build step is executed here.
+[build]
+  publish = "public"
+  command = "echo 'Static site - no build step required'"
